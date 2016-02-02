@@ -11,26 +11,36 @@ import AFNetworking;
 import MBProgressHUD;
 
 class MoviesViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+//    @IBOutlet weak var errorView: UIView!
 
     @IBOutlet weak var tableView: UITableView!
+    @IBOutlet weak var networkError: UIView!
     
     var movies: [NSDictionary]?
+    let refreshControl = UIRefreshControl();
     
     override func viewDidLoad() {
         super.viewDidLoad()
-
+//        errorView.hidden = true
         print("tableView: \(tableView)");
         tableView.dataSource = self;
         tableView.delegate = self;
-        let refreshControl = UIRefreshControl()
         
         refreshControlAction(refreshControl);
         tableView.insertSubview(refreshControl, atIndex: 0)
         refreshControl.addTarget(self, action: "refreshControlAction:", forControlEvents: UIControlEvents.ValueChanged)
     }
     
+    
     func refreshControlAction(refreshControl: UIRefreshControl) {
-        
+        if !isConnectedToNetwork() {
+            print("no network connection");
+            refreshControl.endRefreshing();
+            networkError.hidden = false;
+            return;
+        } else {
+            networkError.hidden = true;
+        }
         let apiKey = "e2eea30c49db9a7f219266fbc9d34297"
         let url = NSURL(string: "https://api.themoviedb.org/3/movie/now_playing?api_key=\(apiKey)")
         let request = NSURLRequest(
@@ -54,11 +64,28 @@ class MoviesViewController: UIViewController, UITableViewDataSource, UITableView
                             self.movies = responseDictionary["results"] as? [NSDictionary];
                             self.tableView.reloadData()
                             MBProgressHUD.hideHUDForView(self.view, animated: true)
+                            refreshControl.endRefreshing()
                     }
                 }
             }
         )
         task.resume()
+    }
+    
+    func isConnectedToNetwork() -> Bool {
+        var zeroAddress = sockaddr_in()
+        zeroAddress.sin_len = UInt8(sizeofValue(zeroAddress))
+        zeroAddress.sin_family = sa_family_t(AF_INET)
+        let defaultRouteReachability = withUnsafePointer(&zeroAddress) {
+            SCNetworkReachabilityCreateWithAddress(nil, UnsafePointer($0))
+        }
+        var flags = SCNetworkReachabilityFlags()
+        if !SCNetworkReachabilityGetFlags(defaultRouteReachability!, &flags) {
+            return false
+        }
+        let isReachable = (flags.rawValue & UInt32(kSCNetworkFlagsReachable)) != 0
+        let needsConnection = (flags.rawValue & UInt32(kSCNetworkFlagsConnectionRequired)) != 0
+        return (isReachable && !needsConnection)
     }
 
     override func didReceiveMemoryWarning() {
@@ -95,6 +122,10 @@ class MoviesViewController: UIViewController, UITableViewDataSource, UITableView
         cell.overview.text = movie["overview"] as? String;
         cell.movieImage.setImageWithURL(imageURL!);
         return cell;
+    }
+    
+    @IBAction func refreshPage(sender: AnyObject) {
+        refreshControlAction(refreshControl);
     }
     
     /*
